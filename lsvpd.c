@@ -46,6 +46,69 @@ void vpd_fileattr(const char *attr, const char *file, int off)
   }
 }
 
+int vpd_readtag(int fd, int off, int *len)
+{
+  uint8_t tag, tbuf[2];
+
+  if (pread(fd, &tag, 1, off) != 1)
+    return -1;
+  if (tag == 0 || tag == 0xFF || tag == 0x7F)
+    return -1;
+  if (tag & 0x80) {
+    /* Long resource */
+    if (pread(fd, tbuf, 2, off+1) != 2)
+      return -1;
+    *len = tbuf[0] +  (tbuf[1] << 8);
+    return tag;
+  }
+  /* Short resource */
+  *len = tag & 0xF;
+  return tag & ~0xF;
+}
+
+struct vpdr_tag
+{
+  char    sig[2];
+  uint8_t len;
+};
+
+void readvpd(const char *path)
+{
+  int fd, tag, ilen, rlen, off, vlen;
+  struct vpdr_tag *vr;
+  char vrstr[258];
+  void *buf;
+
+  memset(vrstr, 0, sizeof(vrstr));
+  if ((fd = open(path, O_RDONLY)) < 0)
+    return;
+  /* Read VPD-I */
+  tag = vpd_readtag(fd, 0, &ilen);
+  if (tag != 0x82)
+    goto end;
+
+  /* Read VPD-R */
+  tag = vpd_readtag(fd, ilen+3, &rlen);
+  if (tag != 0x90)
+    goto end;
+  buf = alloca(rlen);
+  if (pread(fd, buf, rlen, ilen+3+3) != rlen)
+    goto end;
+  printf("hazvpd\n");
+  dump(buf, rlen);
+  for (off=0; off<rlen; off += vr->len+3) {
+    vr = buf + off;
+    vlen = vr->len;
+    if (memcmp(vr->sig, "RV", 2)) {
+      snprintf(vrstr, sizeof(vrstr), "%.*s",
+	       vlen, (char *)&vr[1]);
+      vpd_attr(vr->sig, vrstr);
+    }
+  }
+ end:
+  close(fd);
+}
+
 /* Dump VPD for block devices */
 int scanblockdev(const char *path, void *arg)
 {
@@ -71,6 +134,8 @@ int scannetdev(const char *path, void *arg)
     vpd_fileattr("MF", path, 0);
   if (!strcmp(vb, "device"))
     vpd_fileattr("PN", path, 0);
+  if (!strcmp(vb, "vpd"))
+    readvpd(path);
   return 0;
 }
 
@@ -121,6 +186,5 @@ int main(int argc, char *argv[])
 {
   smbios_init(scan_smbios);
   _scandir("/sys/block", scanblock, 0);
-
   _scandir("/sys/class/net", scannet, 0);
 }
