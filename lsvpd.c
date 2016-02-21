@@ -6,11 +6,20 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/queue.h>
+#include <sys/types.h>
 #include <inttypes.h>
+#include <sys/ioctl.h>
 
 #include "lsvpd.h"
 #include "smbios.h"
 #include "util.h"
+#include "ipmi.h"
+
+#include <net/if.h>
+#include <net/if_arp.h>
+#include <linux/sockios.h>
+
+#include <linux/ethtool.h>
 
 const char *_vpdpath;
 
@@ -151,11 +160,31 @@ int scanblock(const char *path, void *arg)
 
 int scannet(const char *path, void *arg)
 {
+  struct ethtool_drvinfo dinfo;
   char vpath[PATH_MAX];
-  
+  const char *vb;
+  struct ifreq ifr;
+  int fd, err;
+
   _vpdpath = path;
+  vb = _basename(path);
   snprintf(vpath, sizeof(vpath), "%s/device", path);
   _scandir(vpath, scannetdev, (void *)path);
+
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, vb, sizeof(ifr.ifr_name)-1);
+  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0)
+    return 0;
+  dinfo.cmd = ETHTOOL_GDRVINFO;
+  ifr.ifr_data = (void *)&dinfo;
+  err = ioctl(fd, SIOCETHTOOL, &ifr);
+  close(fd);
+
+  if (!err && strcmp(dinfo.fw_version, "N/A")) {
+    vpd_attr("TY", "NET");
+    vpd_attr("FW", dinfo.fw_version);
+  }
   return 0;
 }
 
@@ -167,6 +196,13 @@ void scan_smbios(union smbios_type *tt, char *smstrs[])
 	   tt->hdr.type, tt->hdr.handle);
   _vpdpath = vpdkey;
 
+  /* BIOS */
+  if (tt->hdr.type == 0) {
+    vpd_attr("TY", "BIOS");
+    vpd_attr("MF", smstrs[tt->type0.mf]);
+    vpd_attr("FW", smstrs[tt->type0.ver]);
+    vpd_attr("FD", smstrs[tt->type0.reldate]);
+  }
   /* System/Baseboard */
   if (tt->hdr.type == 1 || tt->hdr.type == 2) {
     vpd_attr("MF", smstrs[tt->type1.mf]);
@@ -175,16 +211,20 @@ void scan_smbios(union smbios_type *tt, char *smstrs[])
   }
   /* Memory DIMM */
   if (tt->hdr.type == 17 && tt->type17.sz) {
+    vpd_attr("TY", "DIMM");
     vpd_attr("MF", smstrs[tt->type17.mf]);
     vpd_attr("PN", smstrs[tt->type17.pn]);
     vpd_attr("SN", smstrs[tt->type17.sn]);
     vpd_attr("YA", smstrs[tt->type17.loc]);
+    vpd_attr("AT", smstrs[tt->type17.at]);
   }
 }
 
 int main(int argc, char *argv[])
 {
+  ipmi_scan();
   smbios_init(scan_smbios);
   _scandir("/sys/block", scanblock, 0);
   _scandir("/sys/class/net", scannet, 0);
+  return 0;
 }

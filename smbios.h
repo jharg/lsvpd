@@ -28,6 +28,22 @@ struct smbios_hdr {
 
 union smbios_type {
   struct smbios_hdr hdr;
+  /* Type 0: BIOS Information */
+  struct {
+    struct smbios_hdr hdr;
+    uint8_t mf;
+    uint8_t ver;
+    uint16_t sseg;
+    uint8_t reldate;
+    uint8_t romsz;
+    uint64_t flags;
+    uint8_t  res[2];
+    uint8_t  mjr;
+    uint8_t  mnr;
+    uint8_t  ecmjr;
+    uint8_t  ecmnr;
+  } _PACKED type0;
+  /* Type 1: System Information */
   struct {
     struct smbios_hdr hdr;
     uint8_t mf;
@@ -35,6 +51,7 @@ union smbios_type {
     uint8_t ver;
     uint8_t sn;
   } _PACKED type1;
+  /* Type 17: Memory Device */
   struct {
     struct smbios_hdr hdr;
     uint16_t pmah;

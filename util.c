@@ -105,3 +105,13 @@ uint32_t smscan(uint32_t start, uint32_t end, int klen, void *key, int step)
   }
   return 0;
 }
+
+uint8_t checksum(void *buf, int len)
+{
+  uint8_t v = 0;
+  uint8_t *bp = buf;
+
+  while(len--)
+    v += *bp++;
+  return v;
+}

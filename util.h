@@ -6,3 +6,4 @@ void _scandir(const char *path, int (*fn)(const char *, void *), void *arg);
 void physmemcpy(void *dest, uint32_t src, int len);
 int physmemcmp(void *dest, uint32_t src, int len);
 uint32_t smscan(uint32_t start, uint32_t end, int klen, void *key, int step);
+uint8_t checksum(void *buf, int len);
