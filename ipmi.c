@@ -44,7 +44,7 @@ ipmicmd(int sa, int lun, int netfn, int cmd,
 
 	memset(resp, 0, resplen);
 	fd = open("/dev/ipmi0", O_RDONLY);
-	  if (fd < 0)
+	if (fd < 0)
 		return -1;
 #if 0
 	printf("--ipmicmd: %.2x %.2x len=%d,%d\n", netfn, cmd,
