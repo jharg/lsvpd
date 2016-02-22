@@ -106,6 +106,7 @@ ipmicmd(int sa, int lun, int netfn, int cmd,
 		memcpy(resp, rcv.msg.data + 1, *rlen);
 	}
  end:
+	close(fd);
 	return rc;
 }
 
@@ -171,12 +172,15 @@ char *fru_string(uint8_t *src, uint8_t **end)
 	return _ipmi_sensor_name(tlen, src);
 }
 
+#if 0
 void fru_product(uint8_t *ptr)
 {
 	uint8_t *pos;
 
-	if (checksum(ptr, ptr[1]*8) != 0)
+	if (checksum(ptr, ptr[1]*8) != 0) {
 		printf("bad checksum\n");
+		return;
+	}
 	printf(" product ver:	%d\n", ptr[0] & 0xf);
 	printf(" product lang:	%d\n", ptr[2]);
   
@@ -194,8 +198,10 @@ void fru_chassis(uint8_t *ptr)
 {
 	uint8_t *pos;
 
-	if (checksum(ptr, ptr[1] * 8) != 0)
+	if (checksum(ptr, ptr[1] * 8) != 0) {
 		printf("bad checksum\n");
+		return;
+	}
 	printf(" chassis ver:	%d\n", ptr[0] & 0xF);
 	printf(" chassis len:	%d\n", ptr[1] * 8);
 	printf(" chassis type:	%d\n", ptr[2]);
@@ -210,8 +216,10 @@ void fru_board(uint8_t *ptr)
 	int date;
 	uint8_t *pos;
 
-	if (checksum(ptr, ptr[1] * 8) != 0)
+	if (checksum(ptr, ptr[1] * 8) != 0) {
 		printf("bad checksum\n");
+		return;
+	}
 	printf(" board ver : %d\n", ptr[0] & 0xF);
 	printf(" board len : %d\n", ptr[1] * 8);
 	printf(" board lang: %d\n", ptr[2]);
@@ -227,12 +235,14 @@ void fru_board(uint8_t *ptr)
 	printf(" board file:  %s\n", fru_string(pos, &pos));
 }
 
-void showfru(void *data, int len)
+void showfru(void *data)
 {
 	struct fru_common *fcu = data;
 
-	if (checksum(fcu, sizeof(*fcu)) != 0)
+	if (checksum(fcu, sizeof(*fcu)) != 0) {
 		printf("bad fru checksum\n");
+		return;
+	}
 	printf("version	   : %d\n", fcu->version & 0xF);
 	printf("internal   : %d\n", fcu->iua_offset);
 	printf("chassis	   : %d\n", fcu->cia_offset);
@@ -246,8 +256,9 @@ void showfru(void *data, int len)
 	if (fcu->pia_offset)
 		fru_product(data + fcu->pia_offset * 8);
 }
+#endif
 
-int
+void *
 ipmi_read_fru(int sa, int id, int lun)
 {
 	uint8_t cmd[6];
@@ -260,16 +271,12 @@ ipmi_read_fru(int sa, int id, int lun)
 	cmd[0] = id;
 	if (ipmicmd(sa, 0x00, STORAGE_NETFN, STORAGE_GET_FRU_INFO, 1,
 		    cmd, sizeof(data), &rlen, data)) {
-		printf("Get FRU Info %d fails\n", id);
-		return -1;
+		return NULL;
 	}
 	frulen = (data[1] << 8) + data[0];
-	printf("FRU size: %d by %s\n", frulen,
-	       data[2] & 1 ? "words" : "bytes");
 
 	off = 0;
 	fru = malloc(frulen);
-	memset(fru, 0, frulen);
 	for (i = 0; i < frulen; i += 16) {
 		memset(cmd, 0, sizeof(cmd));
 		cmd[0] = id;
@@ -282,10 +289,7 @@ ipmi_read_fru(int sa, int id, int lun)
 			off += data[0];
 		}
 	}
-	dump(fru, frulen);
-	showfru(fru, frulen);
-	free(fru);
-	return 0;
+	return fru;
 }
 
 
@@ -305,7 +309,6 @@ get_sdr_partial(uint16_t recordId, uint16_t reserveId, uint8_t offset,
 	memset(cmd, 0, sizeof(cmd));
 	if (ipmicmd(BMC_SA, 0, STORAGE_NETFN, STORAGE_GET_SDR, sizeof(gsdr),
 		    &gsdr, 8 + length, &len, cmd)) {
-		printf("getsdrpartial fails\n");
 		return -1;
 	}
 	if (nxtRecordId)
@@ -322,13 +325,13 @@ get_sdr(uint16_t recid, uint16_t *nxtrec)
 	int len, sdrlen, offset;
 	struct sdrhdr shdr;
 
+	if (recid == 0xFFFF)
+		return NULL;
 	if (ipmicmd(BMC_SA, 0, STORAGE_NETFN, STORAGE_RESERVE_SDR,
 		    0, NULL, sizeof(resid), &len, &resid)) {
-			printf("reserve SDR fails\n");
-			return NULL;
-		}
+		return NULL;
+	}
 	if (get_sdr_partial(recid, resid, 0, sizeof(shdr), &shdr, nxtrec)) {
-		printf("get header fails\n");
 		return NULL;
 	}
 
@@ -345,30 +348,22 @@ get_sdr(uint16_t recid, uint16_t *nxtrec)
 		if (len > maxsdrlen)
 			len = maxsdrlen;
 		if (get_sdr_partial(recid, resid, offset, len,
-				    psdr + offset, NULL)) {
+				    (void *)psdr + offset, NULL)) {
 			free(psdr);
 			return NULL;
 		}
 	}
-	printf("Got SDR: %.4x %.2x %.2x %.2x\n", shdr.record_id,
-	       shdr.sdr_version, shdr.record_type, shdr.record_length);
 	return psdr;
 }
 
-void ipmi_scan()
+void ipmi_init(void (*fn)(union sdr_type *))
 {
 	uint16_t rec;
 	union sdr_type *psdr;
 
 	rec = 0;
 	while ((psdr = get_sdr(rec, &rec)) != NULL) {
-		if (psdr->hdr.record_type == 0x11) {
-			ipmi_read_fru(psdr->type11.addr,
-				      psdr->type11.slave_addr,
-				      psdr->type11.lun);
-		} else {
-			printf("%.4x %.2x %.2x\n", psdr->hdr.record_id,
-			       psdr->hdr.record_type, psdr->hdr.record_length);
-		}
+		fn(psdr);
+		free(psdr);
 	}
 }

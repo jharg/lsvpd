@@ -29,8 +29,8 @@ void smbios_init(void (*fn)(union smbios_type *tt, char *smstrs[]))
 	ep = smscan(0xF0000, 0xFFFFFL, 4, "_SM_", 16);
 	if (!ep)
 		return;
-	printf("got SMBIOS EP: %" PRIx32 "\n", ep);
 	physmemcpy(&sm, ep, sizeof(sm));
+	printf("got SMBIOS EP: %" PRIx32 " %d.%d\n", ep, sm.ep_mjr, sm.ep_mnr);
 
 	smstrs[0] = "";
 	ep = sm.dmi_tbladdr;

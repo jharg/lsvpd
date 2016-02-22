@@ -29,7 +29,7 @@ void dump(const void *buf, int len)
 		printf("  ");
 		for (j = 0; j < 16; j++) {
 			c = pb[i+j];
-			if (i+j > len)
+			if (i+j >= len)
 				c = 'Z';
 			printf("%c", (c < ' ' || c > 'z') ? '.' : c);
 		}

@@ -50,7 +50,66 @@ union smbios_type {
 		uint8_t pn;
 		uint8_t ver;
 		uint8_t sn;
+		uint8_t uuid[16];
+		uint8_t wut;
+		uint8_t skunum;
+		uint8_t family;
 	} __PACKED type1;
+	/* Type 2: Baseboard Information */
+	struct {
+		struct smbios_hdr hdr;
+		uint8_t mf;
+		uint8_t pn;
+		uint8_t ver;
+		uint8_t sn;
+		uint8_t at;
+		uint8_t ff;
+		uint8_t loc;
+		uint16_t hndl;
+		uint8_t  bt;
+		uint8_t  ndevs;
+		uint16_t devs[];
+	} __PACKED type2;
+	/* Type 3: System Enclosure/Chassis */
+	struct {
+		struct smbios_hdr hdr;
+		uint8_t mf;
+		uint8_t type;
+		uint8_t ver;
+		uint8_t sn;
+		uint8_t at;
+		uint8_t bs;
+		uint8_t pss;
+		uint8_t ts;
+		uint8_t ss;
+		uint32_t oem;
+		uint8_t height;
+		uint8_t npwr;
+		uint8_t nelt;
+		uint8_t eltlen;
+	} __PACKED type3;
+	/* Type 4: Processor Information */
+	struct {
+		struct smbios_hdr hdr;
+		uint8_t sd;
+		uint8_t pt;
+		uint8_t pf;
+		uint8_t mf;
+		uint64_t pid;
+		uint8_t vr;
+		uint8_t volt;
+		uint16_t eclock;
+		uint16_t maxspd;
+		uint16_t curspd;
+		uint8_t  sts;
+		uint8_t pu;
+		uint16_t l1h;
+		uint16_t l2h;
+		uint16_t l3h;
+		uint8_t  sn;
+		uint8_t  at;
+		uint8_t  pn;
+	} __PACKED type4;
 	/* Type 17: Memory Device */
 	struct {
 		struct smbios_hdr hdr;

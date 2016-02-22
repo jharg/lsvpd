@@ -26,8 +26,6 @@
 #define TRANSPORT_NETFN                 0x0c
 #define TR_GET_LAN_CONFIG_PARAMS        0x02
 
-void ipmi_scan();
-
 #define __PACKED __attribute__((packed))
 
 struct getsdr {
@@ -74,4 +72,8 @@ struct fru_common {
 	uint8_t pad;
 	uint8_t cksum;
 };
+
+void ipmi_init(void (*fn)(union sdr_type *));
+void *ipmi_read_fru(int sa, int id, int lun);
+char *fru_string(uint8_t *src, uint8_t **end);
 #endif
