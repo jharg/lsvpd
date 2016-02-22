@@ -1,3 +1,8 @@
+/*
+ *  Copyright (c) 2006-2016 Dell, Inc.
+ *  by Jordan Hargrave <jordan_hargrave@dell.com>
+ *  Licensed under the Lesser GNU General Public license, version 3.
+ */
 #define _XOPEN_SOURCE 600
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,45 +25,6 @@
 #include <linux/ipmi.h>
 #include "ipmi.h"
 #include "util.h"
-
-#define _PACKED __attribute__((packed))
-
-struct getsdr
-{
-  uint16_t      resid;
-  uint16_t      recid;
-  uint8_t       offset;
-  uint8_t       length;
-} _PACKED;
-
-struct sdrhdr
-{
-  uint16_t record_id;
-  uint8_t  sdr_version;
-  uint8_t  record_type;
-  uint8_t  record_length;
-} _PACKED;
-
-union sdr_type {
-  struct sdrhdr hdr;
-  struct {
-    struct sdrhdr  sdrhdr;
-    uint8_t  addr;
-    uint8_t  slave_addr;
-    uint8_t  lun;
-    uint8_t  channel;
-
-    uint8_t  rsvd;
-    uint8_t  type;
-    uint8_t  modifier;
-    uint8_t         entity_id;
-    uint8_t         entity_instance;
-    uint8_t         oem;
-    uint8_t         typelen;
-    uint8_t         name[1];
-  } _PACKED type11;
-} _PACKED;
-
 static int maxsdrlen = 0x10;
 
 int
@@ -66,100 +32,82 @@ ipmicmd(int sa, int lun, int netfn, int cmd,
 	int datalen, void *data,
 	int resplen, int *rlen, void *resp)
 {
-  static int 				msgid;
-  struct ipmi_system_interface_addr 	saddr;
-  struct ipmi_ipmb_addr 		iaddr;
-  struct ipmi_addr 			raddr;
-  struct ipmi_req 			req;
-  struct ipmi_recv 			rcv;
-  fd_set                                rfd;
-  int 					fd, rc;
-  uint8_t                               tresp[resplen+1];
+	static int				msgid;
+	struct ipmi_system_interface_addr	saddr;
+	struct ipmi_ipmb_addr			iaddr;
+	struct ipmi_addr			raddr;
+	struct ipmi_req				req;
+	struct ipmi_recv			rcv;
+	fd_set					rfd;
+	int					fd, rc;
+	uint8_t					tresp[resplen+1];
 
-  memset(resp, 0, resplen);
-  if ((fd = open("/dev/ipmi0", O_RDONLY)) < 0)
-    return -1;
+	memset(resp, 0, resplen);
+	fd = open("/dev/ipmi0", O_RDONLY);
+	  if (fd < 0)
+		return -1;
 #if 0
-  printf("--ipmicmd: %.2x %.2x len=%d,%d\n", netfn, cmd, datalen, resplen);
-  dump(data, datalen);
+	printf("--ipmicmd: %.2x %.2x len=%d,%d\n", netfn, cmd,
+	       datalen, resplen);
+	dump(data, datalen);
 #endif
-  if (sa == BMC_SA) {
-    saddr.addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
-    saddr.channel = IPMI_BMC_CHANNEL;
-    saddr.lun = 0;
-    req.addr = (void *)&saddr;
-    req.addr_len = sizeof(saddr);
-  }
-  else {
-    iaddr.addr_type = IPMI_IPMB_ADDR_TYPE;
-    iaddr.channel = 0;
-    iaddr.slave_addr = sa;
-    iaddr.lun = lun;
-    req.addr = (void *)&iaddr;
-    req.addr_len = sizeof(iaddr);
-  }		
+	if (sa == BMC_SA) {
+		saddr.addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+		saddr.channel = IPMI_BMC_CHANNEL;
+		saddr.lun = 0;
+		req.addr = (void *)&saddr;
+		req.addr_len = sizeof(saddr);
+	} else {
+		iaddr.addr_type = IPMI_IPMB_ADDR_TYPE;
+		iaddr.channel = 0;
+		iaddr.slave_addr = sa;
+		iaddr.lun = lun;
+		req.addr = (void *)&iaddr;
+		req.addr_len = sizeof(iaddr);
+	}
 
-  /* Issue command */
-  req.msgid = ++msgid;
-  req.msg.netfn = netfn;
-  req.msg.cmd = cmd;
-  req.msg.data_len = datalen;
-  req.msg.data = data;
-  rc = ioctl(fd, IPMICTL_SEND_COMMAND, (void *)&req);
-  if (rc != 0) {
-    perror("send");
-    goto end;
-  }
+	/* Issue command */
+	req.msgid = ++msgid;
+	req.msg.netfn = netfn;
+	req.msg.cmd = cmd;
+	req.msg.data_len = datalen;
+	req.msg.data = data;
+	rc = ioctl(fd, IPMICTL_SEND_COMMAND, (void *)&req);
+	if (rc != 0) {
+		perror("send");
+		goto end;
+	}
 
-  /* Wait for Response */
-  FD_ZERO(&rfd);
-  FD_SET(fd, &rfd);
-  rc = select(fd+1, &rfd, NULL, NULL, NULL);
-  if (rc < 0) {
-    perror("select");
-    goto end;
-  }
+	/* Wait for Response */
+	FD_ZERO(&rfd);
+	FD_SET(fd, &rfd);
+	rc = select(fd+1, &rfd, NULL, NULL, NULL);
+	if (rc < 0) {
+		perror("select");
+		goto end;
+	}
 
-  /* Get response */
-  rcv.msg.data = tresp;
-  rcv.msg.data_len = resplen+1;
-  rcv.addr = (void *)&raddr;
-  rcv.addr_len = sizeof(raddr);
-  rc = ioctl(fd, IPMICTL_RECEIVE_MSG_TRUNC, (void *)&rcv);
-  if (rc != 0 && errno != EMSGSIZE) {
-    perror("recv");
-    goto end;
-  }
-  rc = rcv.msg.data[0];
-  if (rc != 0) {
-    rc = rcv.msg.data[0];
-    //printf("IPMI Error: %.2x\n", rcv.msg.data[0]);
-  }
-  else {
-    *rlen = rcv.msg.data_len - 1;
-    memcpy(resp, rcv.msg.data + 1, *rlen);
-  }
+	/* Get response */
+	rcv.msg.data = tresp;
+	rcv.msg.data_len = resplen+1;
+	rcv.addr = (void *)&raddr;
+	rcv.addr_len = sizeof(raddr);
+	rc = ioctl(fd, IPMICTL_RECEIVE_MSG_TRUNC, (void *)&rcv);
+	if (rc != 0 && errno != EMSGSIZE) {
+		perror("recv");
+		goto end;
+	}
+	rc = rcv.msg.data[0];
+	if (rc != 0) {
+		rc = rcv.msg.data[0];
+		//printf("IPMI Error: %.2x\n", rcv.msg.data[0]);
+	} else {
+		*rlen = rcv.msg.data_len - 1;
+		memcpy(resp, rcv.msg.data + 1, *rlen);
+	}
  end:
-  return rc;
+	return rc;
 }
-
-struct fru_common
-{
-  uint8_t version;
-  uint8_t iua_offset;  // internal use area
-  uint8_t cia_offset;  // chassis info area
-  uint8_t ba_offset;   // board area
-  uint8_t pia_offset;  // product info area
-  uint8_t mra_offset;  // multirecord area
-  uint8_t pad;
-  uint8_t cksum;
-};
-
-struct fru_iua
-{
-  uint8_t version;
-  uint8_t data[];
-};
 
 /* Fru chassis:
    u8 version
@@ -176,250 +124,251 @@ struct fru_iua
 */
 char *_ipmi_sensor_name(uint8_t tc, void *n)
 {
-  char     ascii6[] = " !\"#$%&\'{}*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
-  char     bcdplus[] = "0123456789 -.:,_";
-  int      slen;
-  char     *t;
-  uint64_t xn;
-  uint8_t  *pn = n;
-  int i;
+	char	 ascii6[] = " !\"#$%&\'{}*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
+	char	 bcdplus[] = "0123456789 -.:,_";
+	int	 slen;
+	char	 *t;
+	uint64_t xn;
+	uint8_t	 *pn = n;
+	int i;
 
-  slen = tc & 0x1F;
-  switch (tc >> 6) {
-  case 0x00: // unicode
-    t = strdup("unicodez");
-    break;
-  case 0x01: // bcdplus
-    t = calloc(1, slen*2+4 + 10);
-    strcpy(t, "bcd:");
-    for (i=0; i<slen; i++) {
-      t[i*2+4] = bcdplus[(pn[i] >> 0) & 0xF];
-      t[i*2+5] = bcdplus[(pn[i] >> 4) & 0xF];
-    }
-    break;
-  case 0x02: // ascii6
-    t = calloc(1, slen*2 + 10);
-    for (i=0; i<slen; i+=3) {
-      xn = pn[i] + (pn[i+1] << 8) + (pn[i+2] << 16);
-      t[i*4+0] = ascii6[(xn >> 0) & 0x3F];
-      t[i*4+1] = ascii6[(xn >> 6) & 0x3F];
-      t[i*4+2] = ascii6[(xn >> 12) & 0x3F];
-      t[i*4+3] = ascii6[(xn >> 18) & 0x3F];
-    }
-    break;
-  case 0x03: // ascii8
-    t = calloc(1, slen + 10);
-    memcpy(t, n, slen);
-    break;
-  }  
-  return t;
+	slen = tc & 0x1F;
+	switch (tc >> 6) {
+	case 0x00: /* unicode */
+		t = strdup("unicodez");
+		break;
+	case 0x01: /* bcdplus */
+		t = calloc(1, slen*2+4 + 10);
+		strcpy(t, "bcd:");
+		for (i = 0; i < slen; i++) {
+			t[i*2+4] = bcdplus[(pn[i] >> 0) & 0xF];
+			t[i*2+5] = bcdplus[(pn[i] >> 4) & 0xF];
+		}
+		break;
+	case 0x02: /* ascii6 */
+		t = calloc(1, slen*2 + 10);
+		for (i = 0; i < slen; i += 3) {
+			xn = pn[i] + (pn[i+1] << 8) + (pn[i+2] << 16);
+			t[i*4+0] = ascii6[(xn >> 0) & 0x3F];
+			t[i*4+1] = ascii6[(xn >> 6) & 0x3F];
+			t[i*4+2] = ascii6[(xn >> 12) & 0x3F];
+			t[i*4+3] = ascii6[(xn >> 18) & 0x3F];
+		}
+		break;
+	case 0x03: /* ascii8 */
+		t = calloc(1, slen + 10);
+		memcpy(t, n, slen);
+		break;
+	}
+	return t;
 }
 
 char *fru_string(uint8_t *src, uint8_t **end)
 {
-  static char str[128], *s;
-  uint8_t tlen = *src++;
+	uint8_t tlen = *src++;
 
-  *end = src + (tlen & 0x3F);
-  return _ipmi_sensor_name(tlen, src);
+	*end = src + (tlen & 0x3F);
+	return _ipmi_sensor_name(tlen, src);
 }
 
 void fru_product(uint8_t *ptr)
 {
-  uint8_t *pos;
+	uint8_t *pos;
 
-  //dump(ptr, ptr[1] * 8);
-  if (checksum(ptr, ptr[1]*8) != 0)
-    printf("bad checksum\n");
-  printf(" product ver:   %d\n", ptr[0] & 0xf);
-  printf(" product lang:  %d\n", ptr[2]);
+	if (checksum(ptr, ptr[1]*8) != 0)
+		printf("bad checksum\n");
+	printf(" product ver:	%d\n", ptr[0] & 0xf);
+	printf(" product lang:	%d\n", ptr[2]);
   
-  pos = ptr+3;
-  printf(" product mfctr: %s\n", fru_string(pos, &pos));
-  printf(" product name : %s\n", fru_string(pos, &pos));
-  printf(" product part : %s\n", fru_string(pos, &pos));
-  printf(" product ver  : %s\n", fru_string(pos, &pos));
-  printf(" product serial:%s\n", fru_string(pos, &pos));
-  printf(" asset tag    : %s\n", fru_string(pos, &pos));
-  printf(" file id      : %s\n", fru_string(pos, &pos));
+	pos = ptr+3;
+	printf(" product mfctr: %s\n", fru_string(pos, &pos));
+	printf(" product name : %s\n", fru_string(pos, &pos));
+	printf(" product part : %s\n", fru_string(pos, &pos));
+	printf(" product ver  : %s\n", fru_string(pos, &pos));
+	printf(" product serial:%s\n", fru_string(pos, &pos));
+	printf(" asset tag    : %s\n", fru_string(pos, &pos));
+	printf(" file id      : %s\n", fru_string(pos, &pos));
 }
 
 void fru_chassis(uint8_t *ptr)
 {
-  uint8_t *pos;
+	uint8_t *pos;
 
-  //dump(ptr, ptr[1] * 8);
-  if (checksum(ptr, ptr[1] * 8) != 0)
-    printf("bad checksum\n");
-  printf(" chassis ver:   %d\n", ptr[0] & 0xF);
-  printf(" chassis len:   %d\n", ptr[1] * 8);
-  printf(" chassis type:  %d\n", ptr[2]);
+	if (checksum(ptr, ptr[1] * 8) != 0)
+		printf("bad checksum\n");
+	printf(" chassis ver:	%d\n", ptr[0] & 0xF);
+	printf(" chassis len:	%d\n", ptr[1] * 8);
+	printf(" chassis type:	%d\n", ptr[2]);
 
-  pos = ptr + 3;
-  printf(" chassis part:  %s\n", fru_string(pos, &pos));
-  printf(" chassis serial:%s\n", fru_string(pos, &pos));
-  //dump(pos, ptr[1]*8 - (pos - ptr));
+	pos = ptr + 3;
+	printf(" chassis part:	%s\n", fru_string(pos, &pos));
+	printf(" chassis serial:%s\n", fru_string(pos, &pos));
 }
 
 void fru_board(uint8_t *ptr)
 {
-  int date;
-  uint8_t *pos;
+	int date;
+	uint8_t *pos;
 
-  //dump(ptr, ptr[1] * 8);
-  if (checksum(ptr, ptr[1] * 8) != 0)
-    printf("bad checksum\n");
-  printf(" board ver : %d\n", ptr[0] & 0xF);
-  printf(" board len : %d\n", ptr[1] * 8);
-  printf(" board lang: %d\n", ptr[2]);
+	if (checksum(ptr, ptr[1] * 8) != 0)
+		printf("bad checksum\n");
+	printf(" board ver : %d\n", ptr[0] & 0xF);
+	printf(" board len : %d\n", ptr[1] * 8);
+	printf(" board lang: %d\n", ptr[2]);
 
-  date = ptr[3] + (ptr[4] << 8) + (ptr[5] << 16);
-  printf(" board date:  %x\n", date);
+	date = ptr[3] + (ptr[4] << 8) + (ptr[5] << 16);
+	printf(" board date:  %x\n", date);
 
-  pos = ptr + 6;
-  printf(" board mfcr:  %s\n", fru_string(pos, &pos));
-  printf(" board prod:  %s\n", fru_string(pos, &pos));
-  printf(" board serial:%s\n", fru_string(pos, &pos));
-  printf(" board part:  %s\n", fru_string(pos, &pos));
-  printf(" board file:  %s\n", fru_string(pos, &pos));
+	pos = ptr + 6;
+	printf(" board mfcr:  %s\n", fru_string(pos, &pos));
+	printf(" board prod:  %s\n", fru_string(pos, &pos));
+	printf(" board serial:%s\n", fru_string(pos, &pos));
+	printf(" board part:  %s\n", fru_string(pos, &pos));
+	printf(" board file:  %s\n", fru_string(pos, &pos));
 }
 
 void showfru(void *data, int len)
 {
-  struct fru_common *fcu = data;
+	struct fru_common *fcu = data;
 
-  //dump(fcu, len);
-  if (checksum(fcu, sizeof(*fcu)) != 0)
-    printf("bad fru checksum\n");
-  printf("version    : %d\n", fcu->version & 0xF);
-  printf("internal   : %d\n", fcu->iua_offset);
-  printf("chassis    : %d\n", fcu->cia_offset);
-  printf("board      : %d\n", fcu->ba_offset);
-  printf("product    : %d\n", fcu->pia_offset);
-  printf("mra        : %d\n", fcu->mra_offset);
-  if (fcu->cia_offset)
-    fru_chassis(data + fcu->cia_offset * 8);
-  if (fcu->ba_offset)
-    fru_board(data + fcu->ba_offset * 8);
-  if (fcu->pia_offset)
-    fru_product(data + fcu->pia_offset * 8);
+	if (checksum(fcu, sizeof(*fcu)) != 0)
+		printf("bad fru checksum\n");
+	printf("version	   : %d\n", fcu->version & 0xF);
+	printf("internal   : %d\n", fcu->iua_offset);
+	printf("chassis	   : %d\n", fcu->cia_offset);
+	printf("board	   : %d\n", fcu->ba_offset);
+	printf("product	   : %d\n", fcu->pia_offset);
+	printf("mra	   : %d\n", fcu->mra_offset);
+	if (fcu->cia_offset)
+		fru_chassis(data + fcu->cia_offset * 8);
+	if (fcu->ba_offset)
+		fru_board(data + fcu->ba_offset * 8);
+	if (fcu->pia_offset)
+		fru_product(data + fcu->pia_offset * 8);
 }
 
 int
 ipmi_read_fru(int sa, int id, int lun)
 {
-  uint8_t cmd[6];
-  uint8_t data[64];
-  uint8_t *fru;
-  int frulen, i, rlen, off;
+	uint8_t cmd[6];
+	uint8_t data[64];
+	uint8_t *fru;
+	int frulen, i, rlen, off;
 
-  memset(cmd, 0, sizeof(cmd));
-  memset(data, 0, sizeof(data));
-  cmd[0] = id;
-  if (ipmicmd(sa, 0x00, STORAGE_NETFN, STORAGE_GET_FRU_INFO, 1, cmd, sizeof(data), &rlen, data)) {
-    printf("Get FRU Info %d fails\n", id);
-    return -1;
-  }
-  frulen = (data[1] << 8) + data[0];
-  printf("FRU size: %d by %s\n", frulen, data[2] & 1 ? "words" : "bytes");
+	memset(cmd, 0, sizeof(cmd));
+	memset(data, 0, sizeof(data));
+	cmd[0] = id;
+	if (ipmicmd(sa, 0x00, STORAGE_NETFN, STORAGE_GET_FRU_INFO, 1,
+		    cmd, sizeof(data), &rlen, data)) {
+		printf("Get FRU Info %d fails\n", id);
+		return -1;
+	}
+	frulen = (data[1] << 8) + data[0];
+	printf("FRU size: %d by %s\n", frulen,
+	       data[2] & 1 ? "words" : "bytes");
 
-  off = 0;
-  fru = malloc(frulen);
-  memset(fru, 0, sizeof(fru));
-  for (i=0; i<frulen; i+=16) {
-    memset(cmd, 0, sizeof(cmd));
-    cmd[0] = id;
-    cmd[1] = i & 0xFF;
-    cmd[2] = i >> 8;
-    cmd[3] = 16;
-    if (!ipmicmd(sa, 0x00, STORAGE_NETFN, STORAGE_READ_FRU, 4, cmd, sizeof(data), &rlen, data)) {
-      memcpy(fru+off, data+1, data[0]);
-      off += data[0];
-    }
-  }
-  dump(fru, frulen);
-  showfru(fru, frulen);
-  free(fru);
-  return 0;
+	off = 0;
+	fru = malloc(frulen);
+	memset(fru, 0, frulen);
+	for (i = 0; i < frulen; i += 16) {
+		memset(cmd, 0, sizeof(cmd));
+		cmd[0] = id;
+		cmd[1] = i & 0xFF;
+		cmd[2] = i >> 8;
+		cmd[3] = 16;
+		if (!ipmicmd(sa, 0x00, STORAGE_NETFN, STORAGE_READ_FRU, 4,
+			     cmd, sizeof(data), &rlen, data)) {
+			memcpy(fru+off, data+1, data[0]);
+			off += data[0];
+		}
+	}
+	dump(fru, frulen);
+	showfru(fru, frulen);
+	free(fru);
+	return 0;
 }
 
 
 int
-get_sdr_partial(uint16_t recordId, uint16_t reserveId, uint8_t offset, uint8_t length, void *buffer, uint16_t *nxtRecordId)
+get_sdr_partial(uint16_t recordId, uint16_t reserveId, uint8_t offset,
+		uint8_t length, void *buffer, uint16_t *nxtRecordId)
 {
-  struct getsdr gsdr;
-  uint8_t cmd[8 + length];
-  int	len;
+	struct getsdr gsdr;
+	uint8_t cmd[8 + length];
+	int	len;
 
-  gsdr.resid = reserveId;
-  gsdr.recid = recordId;
-  gsdr.offset = offset;
-  gsdr.length = length;
+	gsdr.resid = reserveId;
+	gsdr.recid = recordId;
+	gsdr.offset = offset;
+	gsdr.length = length;
 
-  memset(cmd, 0, sizeof(cmd));
-  if (ipmicmd(BMC_SA, 0, STORAGE_NETFN, STORAGE_GET_SDR, sizeof(gsdr), &gsdr, 8 + length, &len, cmd)) {
-    printf("getsdrpartial fails\n");
-    return -1;
-  }
-  if (nxtRecordId)
-    *nxtRecordId = ((uint16_t *)cmd)[0];
-  memcpy(buffer, cmd + 2, len - 2);
-  return 0;
+	memset(cmd, 0, sizeof(cmd));
+	if (ipmicmd(BMC_SA, 0, STORAGE_NETFN, STORAGE_GET_SDR, sizeof(gsdr),
+		    &gsdr, 8 + length, &len, cmd)) {
+		printf("getsdrpartial fails\n");
+		return -1;
+	}
+	if (nxtRecordId)
+		*nxtRecordId = ((uint16_t *)cmd)[0];
+	memcpy(buffer, cmd + 2, len - 2);
+	return 0;
 }
 
 union sdr_type *
 get_sdr(uint16_t recid, uint16_t *nxtrec)
 {
-  union sdr_type *psdr;
-  uint16_t resid = 0;
-  int len, sdrlen, offset;
-  struct sdrhdr shdr;
+	union sdr_type *psdr;
+	uint16_t resid = 0;
+	int len, sdrlen, offset;
+	struct sdrhdr shdr;
 
-  if (ipmicmd(BMC_SA, 0, STORAGE_NETFN, STORAGE_RESERVE_SDR, 
-	      0, NULL, sizeof(resid), &len, &resid)) 
-    {
-      printf("reserve SDR fails\n");
-      return NULL;
-    }
-  if (get_sdr_partial(recid, resid, 0, sizeof(shdr), &shdr, nxtrec)) {
-    printf("get header fails\n");
-    return NULL;
-  }
+	if (ipmicmd(BMC_SA, 0, STORAGE_NETFN, STORAGE_RESERVE_SDR,
+		    0, NULL, sizeof(resid), &len, &resid)) {
+			printf("reserve SDR fails\n");
+			return NULL;
+		}
+	if (get_sdr_partial(recid, resid, 0, sizeof(shdr), &shdr, nxtrec)) {
+		printf("get header fails\n");
+		return NULL;
+	}
 
-  /* Calculate length of SDR */
-  sdrlen = sizeof(shdr) + shdr.record_length;
-  if ((psdr = malloc(sdrlen)) == NULL)
-    return NULL;
-  memcpy(&psdr->hdr, &shdr, sizeof(shdr));
+	/* Calculate length of SDR */
+	sdrlen = sizeof(shdr) + shdr.record_length;
+	psdr = malloc(sdrlen);
+	if (!psdr)
+		return NULL;
+	memcpy(&psdr->hdr, &shdr, sizeof(shdr));
 
-  /* Get SDR objects */
-  for (offset = sizeof(shdr); offset < sdrlen; offset += maxsdrlen) {
-    len = sdrlen - offset;
-    if (len > maxsdrlen)
-      len = maxsdrlen;
-    if (get_sdr_partial(recid, resid, offset, len, psdr + offset, NULL)) {
-      free(psdr);
-      return NULL;
-    }
-  }
-  printf("Got SDR: %.4x %.2x %.2x %.2x\n", shdr.record_id, shdr.sdr_version, shdr.record_type, shdr.record_length);
-  return psdr;
+	/* Get SDR objects */
+	for (offset = sizeof(shdr); offset < sdrlen; offset += maxsdrlen) {
+		len = sdrlen - offset;
+		if (len > maxsdrlen)
+			len = maxsdrlen;
+		if (get_sdr_partial(recid, resid, offset, len,
+				    psdr + offset, NULL)) {
+			free(psdr);
+			return NULL;
+		}
+	}
+	printf("Got SDR: %.4x %.2x %.2x %.2x\n", shdr.record_id,
+	       shdr.sdr_version, shdr.record_type, shdr.record_length);
+	return psdr;
 }
 
 void ipmi_scan()
 {
-  uint16_t rec;
-  union sdr_type *psdr;
+	uint16_t rec;
+	union sdr_type *psdr;
 
-  rec = 0;
-  while ((psdr = get_sdr(rec, &rec)) != NULL) {
-    if (psdr->hdr.record_type == 0x11) {
-      ipmi_read_fru(psdr->type11.addr, psdr->type11.slave_addr, 
-		    psdr->type11.lun);
-    }
-    else {
-      printf("%.4x %.2x %.2x\n", psdr->hdr.record_id, 
-	     psdr->hdr.record_type, psdr->hdr.record_length);
-    }
-  }
+	rec = 0;
+	while ((psdr = get_sdr(rec, &rec)) != NULL) {
+		if (psdr->hdr.record_type == 0x11) {
+			ipmi_read_fru(psdr->type11.addr,
+				      psdr->type11.slave_addr,
+				      psdr->type11.lun);
+		} else {
+			printf("%.4x %.2x %.2x\n", psdr->hdr.record_id,
+			       psdr->hdr.record_type, psdr->hdr.record_length);
+		}
+	}
 }

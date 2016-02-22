@@ -28,4 +28,50 @@
 
 void ipmi_scan();
 
+#define __PACKED __attribute__((packed))
+
+struct getsdr {
+	uint16_t      resid;
+	uint16_t      recid;
+	uint8_t	      offset;
+	uint8_t	      length;
+} __PACKED;
+
+struct sdrhdr {
+	uint16_t record_id;
+	uint8_t	 sdr_version;
+	uint8_t	 record_type;
+	uint8_t	 record_length;
+} __PACKED;
+
+union sdr_type {
+	struct sdrhdr		hdr;
+	struct {
+		struct sdrhdr	sdrhdr;
+		uint8_t		addr;
+		uint8_t		slave_addr;
+		uint8_t		lun;
+		uint8_t		channel;
+
+		uint8_t		rsvd;
+		uint8_t		type;
+		uint8_t		modifier;
+		uint8_t		entity_id;
+		uint8_t		entity_instance;
+		uint8_t		oem;
+		uint8_t		typelen;
+		uint8_t		name[1];
+	} __PACKED type11;
+} __PACKED;
+
+struct fru_common {
+	uint8_t version;
+	uint8_t iua_offset;  /* internal use area */
+	uint8_t cia_offset;  /* chassis info area */
+	uint8_t ba_offset;   /* board area */
+	uint8_t pia_offset;  /* product info area */
+	uint8_t mra_offset;  /* multirecord area */
+	uint8_t pad;
+	uint8_t cksum;
+};
 #endif
