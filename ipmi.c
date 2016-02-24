@@ -21,6 +21,7 @@
 #include <sys/statfs.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <assert.h>
 
 #include <linux/ipmi.h>
 #include "ipmi.h"
@@ -285,6 +286,7 @@ ipmi_read_fru(int sa, int id, int lun)
 		cmd[3] = 16;
 		if (!ipmicmd(sa, 0x00, STORAGE_NETFN, STORAGE_READ_FRU, 4,
 			     cmd, sizeof(data), &rlen, data)) {
+			assert(off+data[0] <= frulen);
 			memcpy(fru+off, data+1, data[0]);
 			off += data[0];
 		}

@@ -112,8 +112,6 @@ void readvpd(const char *path)
 	buf = alloca(rlen);
 	if (pread(fd, buf, rlen, ilen+3+3) != rlen)
 		goto end;
-	printf("hazvpd\n");
-	dump(buf, rlen);
 	for (off = 0; off < rlen; off += vr->len+3) {
 		vr = buf + off;
 		vlen = vr->len;
@@ -266,6 +264,9 @@ void fru_product(uint8_t *ptr)
 {
 	uint8_t *pos;
 
+	/* Check FRU version */
+	if ((ptr[0] & 0xF) != 1)
+		return;
 	if (checksum(ptr, ptr[1]*8) != 0) {
 		return;
 	}
@@ -283,6 +284,9 @@ void fru_chassis(uint8_t *ptr)
 {
 	uint8_t *pos;
 
+	/* Check FRU version */
+	if ((ptr[0] & 0xF) != 1)
+		return;
 	if (checksum(ptr, ptr[1] * 8) != 0) {
 		return;
 	}
@@ -296,6 +300,9 @@ void fru_board(uint8_t *ptr)
 {
 	uint8_t *pos;
 	
+	/* Check FRU version */
+	if ((ptr[0] & 0xF) != 1)
+		return;
 	if (checksum(ptr, ptr[1] * 8) != 0) {
 		return;
 	}
