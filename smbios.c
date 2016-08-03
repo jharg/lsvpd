@@ -22,21 +22,32 @@ void smbios_init(void (*fn)(union smbios_type *tt, char *smstrs[]))
 {
 	struct smbios_ep sm;
 	char *smstrs[32], *smstr;
-	int i, off, nstr, slen;
+	int fd, i, off, nstr, slen;
 	union smbios_type *tt;
 	uint32_t ep;
-  
-	ep = smscan(0xF0000, 0xFFFFFL, 4, "_SM_", 16);
-	if (!ep)
-		return;
-	physmemcpy(&sm, ep, sizeof(sm));
+
+	if ((fd = open("/sys/firmware/dmi/tables/smbios_entry_point", O_RDONLY)) >= 0) {
+		read(fd, &sm, sizeof(sm));
+		close(fd);
+		ep = 0;
+	} else {
+		ep = smscan(0xF0000, 0xFFFFFL, 4, "_SM_", 16);
+		if (!ep)
+			return;
+		physmemcpy(&sm, ep, sizeof(sm));
+		ep = sm.dmi_tbladdr;
+	}
+	tt = alloca(sm.ep_maxsz);
 	printf("got SMBIOS EP: %" PRIx32 " %d.%d\n", ep, sm.ep_mjr, sm.ep_mnr);
 
 	smstrs[0] = "";
-	ep = sm.dmi_tbladdr;
-	tt = alloca(sm.ep_maxsz);
 	for (i = 0; i < sm.dmi_numtbl; i++) {
-		physmemcpy(&tt->hdr, ep, sm.ep_maxsz);
+		if ((fd = open("/sys/firmware/dmi/tables/DMI", O_RDONLY)) >= 0) {
+			pread(fd, tt, sm.ep_maxsz, ep);
+			close(fd);
+		} else {
+			physmemcpy(tt, ep, sm.ep_maxsz);
+		}
 		if (tt->hdr.type == 0x7F)
 			break;
 		nstr = 1;
