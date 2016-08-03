@@ -134,10 +134,11 @@ int scanblockdev(const char *path, void *arg)
 	if (!strcmp(vb, "vendor"))
 		vpd_fileattr("MF", path, 0);
 	if (!strcmp(vb, "model"))
-		vpd_fileattr("PN", path, 0);
-	if (!strcmp(vb, "vpd_pg80")) {
+		vpd_fileattr("PN", path, 0);	
+	if (!strcmp(vb, "vpd_pg80"))
 		vpd_fileattr("SN", path, 4);
-	}
+	if (!strcmp(vb, "rev"))
+		vpd_fileattr("FW", path, 0);
 	return 0;
 }
 
@@ -195,11 +196,13 @@ int scannet(const char *path, void *arg)
 	return 0;
 }
 
-void sm_attr(char *attr, union smbios_type *tt, char *smstrs[], 
-	     int id, int idpos)
+void sm_attr(char *attr, union smbios_type *tt, char *smstrs[],  uint8_t *id)
 {
+	int idpos;
+
+	idpos = id - (uint8_t *)tt;
 	if (id && idpos < tt->hdr.length)
-		vpd_attr(attr, smstrs[id]);
+		vpd_attr(attr, smstrs[*id]);
 }
 
 void scan_smbios(union smbios_type *tt, char *smstrs[])
@@ -213,50 +216,52 @@ void scan_smbios(union smbios_type *tt, char *smstrs[])
 	/* BIOS */
 	if (tt->hdr.type == 0) {
 		vpd_attr("TY", "BIOS");
-		sm_attr("MF", tt, smstrs, tt->type0.mf, 0x4);
-		sm_attr("FW", tt, smstrs, tt->type0.ver, 0x5);
-		sm_attr("FD", tt, smstrs, tt->type0.reldate, 0x8);
+		sm_attr("MF", tt, smstrs, &tt->type0.mf);
+		sm_attr("FW", tt, smstrs, &tt->type0.ver);
+		sm_attr("FD", tt, smstrs, &tt->type0.reldate);
 	}
 	/* System/Baseboard */
 	if (tt->hdr.type == 1) {
-		sm_attr("MF", tt, smstrs, tt->type1.mf, 0x4);
-		sm_attr("PN", tt, smstrs, tt->type1.pn, 0x5);
-		sm_attr("VR", tt, smstrs, tt->type1.ver,0x6);
-		sm_attr("SN", tt, smstrs, tt->type1.sn, 0x7);
-		sm_attr("SK", tt, smstrs, tt->type1.skunum, 0x19);
-		sm_attr("FM", tt, smstrs, tt->type1.family, 0x1A);
+		sm_attr("MF", tt, smstrs, &tt->type1.mf);
+		sm_attr("PN", tt, smstrs, &tt->type1.pn);
+		sm_attr("VR", tt, smstrs, &tt->type1.ver);
+		sm_attr("SN", tt, smstrs, &tt->type1.sn);
+		sm_attr("SK", tt, smstrs, &tt->type1.skunum);
+		sm_attr("FM", tt, smstrs, &tt->type1.family);
 	}
 	/* Baseboard */
 	if (tt->hdr.type == 2) {
-		sm_attr("MF", tt, smstrs, tt->type2.mf, 0x4);
-		sm_attr("PN", tt, smstrs, tt->type2.pn, 0x5);
-		sm_attr("VR", tt, smstrs, tt->type2.ver,0x6);
-		sm_attr("SN", tt, smstrs, tt->type2.sn, 0x7);
-		sm_attr("AT", tt, smstrs, tt->type2.at, 0x8);
-		sm_attr("YL", tt, smstrs, tt->type2.loc, 0xA);
+		sm_attr("MF", tt, smstrs, &tt->type2.mf);
+		sm_attr("PN", tt, smstrs, &tt->type2.pn);
+		sm_attr("VR", tt, smstrs, &tt->type2.ver);
+		sm_attr("SN", tt, smstrs, &tt->type2.sn);
+		sm_attr("AT", tt, smstrs, &tt->type2.at);
+		sm_attr("YL", tt, smstrs, &tt->type2.loc);
 	}
 	/* Type 3: Chassis */
 	if (tt->hdr.type == 3) {
-		sm_attr("MF", tt, smstrs, tt->type3.mf, 0x4);
-		sm_attr("VR", tt, smstrs, tt->type3.ver,0x6);
-		sm_attr("SN", tt, smstrs, tt->type3.sn, 0x7);
-		sm_attr("AT", tt, smstrs, tt->type3.at, 0x8);
+		sm_attr("MF", tt, smstrs, &tt->type3.mf);
+		sm_attr("VR", tt, smstrs, &tt->type3.ver);
+		sm_attr("SN", tt, smstrs, &tt->type3.sn);
+		sm_attr("AT", tt, smstrs, &tt->type3.at);
 	}
 	/* Type 4: Processor */
 	if (tt->hdr.type == 4) {
-		sm_attr("MF", tt, smstrs, tt->type4.mf, 0x7);
-		sm_attr("PV", tt, smstrs, tt->type4.vr, 0x10);
-		sm_attr("SN", tt, smstrs, tt->type4.sn, 0x20);
-		sm_attr("AT", tt, smstrs, tt->type4.at, 0x21);
+		sm_attr("MF", tt, smstrs, &tt->type4.mf);
+		sm_attr("PV", tt, smstrs, &tt->type4.vr);
+		sm_attr("SN", tt, smstrs, &tt->type4.sn);
+		sm_attr("AT", tt, smstrs, &tt->type4.at);
+		sm_attr("PN", tt, smstrs, &tt->type4.pn);
+		sm_attr("YA", tt, smstrs, &tt->type4.sd);
 	}
 	/* Memory DIMM */
 	if (tt->hdr.type == 17 && tt->type17.sz) {
 		vpd_attr("TY", "DIMM");
-		sm_attr("MF", tt, smstrs, tt->type17.mf, 0x17);
-		sm_attr("PN", tt, smstrs, tt->type17.pn, 0x1A);
-		sm_attr("SN", tt, smstrs, tt->type17.sn, 0x18);
-		sm_attr("YA", tt, smstrs, tt->type17.loc, 0x10);
-		sm_attr("AT", tt, smstrs, tt->type17.at, 0x19);
+		sm_attr("YA", tt, smstrs, &tt->type17.loc);
+		sm_attr("MF", tt, smstrs, &tt->type17.mf);
+		sm_attr("PN", tt, smstrs, &tt->type17.pn);
+		sm_attr("SN", tt, smstrs, &tt->type17.sn);
+		sm_attr("AT", tt, smstrs, &tt->type17.at);
 	}
 }
 
